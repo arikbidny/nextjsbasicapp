@@ -1,0 +1,38 @@
+name: 'Build and deploy to AKS'
+
+on:
+  workflow_dispatch:
+
+env:
+  AZURE_CONTAINER_REGISTRY: acrYevLab01
+  PROJECT_NAME: yevdemo
+  AKS_RESOURCE_GROUP: aksDemoEU01
+  AKS_CLUSTER_NAME: aksYevLab01
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Login to Azure CLI
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry (ACR)
+        run: echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.PROJECT_NAME }}:${{ github.sha }} .
+
+      - name: Push Docker image
+        run: docker push ${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.PROJECT_NAME }}:${{ github.sha }}
+
+      - name: Deploy to AKS
+        run: |
+          az aks get-credentials --resource-group ${{ env.AKS_RESOURCE_GROUP }} --name ${{ env.AKS_CLUSTER_NAME }}
+          kubectl set image deployment/${{ env.PROJECT_NAME }}-deployment ${{ env.PROJECT_NAME }}=${{ env.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.PROJECT_NAME }}:${{ github.sha }}
+        env:
+          KUBECONFIG: ${{ github.workspace }}/kubeconfig
